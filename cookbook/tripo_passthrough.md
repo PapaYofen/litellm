@@ -100,12 +100,15 @@ python litellm/proxy/proxy_cli.py --config /path/to/tripo-qa.yaml \
 
 Check that two worker PIDs serve requests. If the checkout reports that reload ignores the worker count, record that limitation in the proof. Use matching setup at the merge base and tested tip, and retain the commands, responses and commit hashes in the PR
 
-With a real Tripo credential configured on that proxy, set `LITELLM_MASTER_KEY`, `LITELLM_BASE_URL` and `TRIPO_MODEL`, then run
+With a real Tripo credential configured on that proxy, set `LITELLM_MASTER_KEY`, `LITELLM_PROXY_URL` and `TRIPO_MODEL`, then run
 
 ```bash
-bash scripts/test_tripo_passthrough.sh
+E2E_TRIPO_STACK=1 E2E_POLL_TIMEOUT=600 E2E_POLL_INTERVAL=5 \
+  uv run --group e2e-dev pytest tests/e2e/llm_translation/test_tripo_passthrough_e2e.py -v -s --reruns 0
 ```
 
-This script purchases a generation, checks cross-key task access, and compares the provider credits with the captured conversion rate, final spend row and key spend delta. Spend logging must be enabled. `TRIPO_POLL_SECONDS` bounds each waiting phase and defaults to 600 seconds, while `TRIPO_POLL_INTERVAL` defaults to 5 seconds. Completion or accounting timeout fails the run
+This replaces `scripts/test_tripo_passthrough.sh`. The proxy URL variable is now `LITELLM_PROXY_URL`, replacing `LITELLM_BASE_URL`. The test purchases one generation, checks cross-key task access, and compares provider credits with the captured conversion rate, final spend row and key spend delta. Spend logging must be enabled. `TRIPO_PROMPT` optionally overrides the default chair prompt
 
-The script prints test key aliases, never key values. After verified accounting it deletes both keys unless `TRIPO_KEEP_TEST_KEYS=1`. If accounting is incomplete, it retains the owner key for reconciliation and attempts to delete the other key. Inspect the task and spend through the administrator account before removing the retained owner key
+`E2E_TRIPO_STACK` opts into the Tripo-configured stack. Without it, the test is deselected. Once enabled, missing configuration, provider errors, completion timeouts and accounting failures fail the run. `E2E_POLL_TIMEOUT` bounds each waiting phase and `E2E_POLL_INTERVAL` controls polling, replacing `TRIPO_POLL_SECONDS` and `TRIPO_POLL_INTERVAL`. The shared defaults are 120 and 5 seconds, so the command above allows 600 seconds per phase for generation and accounting
+
+The test prints key aliases and task IDs, never key values. It deletes both keys after verified accounting. If accounting is incomplete after submission, it retains the owner key for reconciliation and deletes the foreign key. Inspect the task and spend through the administrator account before removing the retained owner key. `TRIPO_KEEP_TEST_KEYS` is no longer supported. Automatic generation retries and whole-test reruns are disabled to avoid purchasing duplicate tasks

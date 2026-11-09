@@ -39,6 +39,7 @@ from e2e_config import (
     SAGEMAKER_NOVA2_LITE_OPT_IN_ENV,
     SAGEMAKER_NOVA_OPT_IN_ENV,
     SECRET_MANAGER_OPT_IN_ENV,
+    TRIPO_OPT_IN_ENV,
     WEEKLY_ANOMALY_OPT_IN_ENV,
     unique_marker,
 )
@@ -64,6 +65,7 @@ IDLE_RSS_READ_TIMEOUT_SECONDS: Final = 30.0
 
 OPT_IN_MARKERS: Final = MappingProxyType(
     {
+        "tripo": TRIPO_OPT_IN_ENV,
         "weekly": WEEKLY_ANOMALY_OPT_IN_ENV,
         "managed_files": MANAGED_FILES_OPT_IN_ENV,
         "prompt_caching_stack": PROMPT_CACHING_OPT_IN_ENV,
@@ -110,6 +112,9 @@ def jwt_identity(idp: Keycloak, resources: ResourceManager, proxy: ProxyClient) 
 
 
 def pytest_configure(config: pytest.Config) -> None:
+    config.addinivalue_line(
+        "markers", "tripo: requires a Tripo-configured proxy and E2E_TRIPO_STACK opt-in"
+    )
     config.addinivalue_line(
         "markers", "migration_startup: isolated container startup tests run by the migration CI workflow"
     )

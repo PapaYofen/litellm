@@ -16,6 +16,7 @@ from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
+    Json,
     JsonValue,
     RootModel,
     model_serializer,
@@ -1867,3 +1868,68 @@ class ReadinessDetailsResponse(ReadinessResponse):
 
     litellm_version: str | None = None
     success_callbacks: list[str] = []
+
+
+class TripoGenerationBody(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    model: str
+    prompt: str
+
+
+class TripoTaskId(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    task_id: str = Field(min_length=1)
+
+
+class TripoGenerationResponse(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    code: Literal[0]
+    data: TripoTaskId
+
+
+class TripoTask(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    status: str
+    credits_consumed: float | None = Field(default=None, ge=0, allow_inf_nan=False)
+
+
+class TripoTaskResponse(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    code: Literal[0]
+    data: TripoTask
+
+
+class TripoTaskListBody(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    task_ids: tuple[str, ...]
+
+
+class TripoUsage(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    credits_consumed: float | None = Field(default=None, ge=0, allow_inf_nan=False)
+
+
+class TripoSpendMetadata(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    tripo_task_id: str | None = None
+    tripo_usd_per_credit: float | None = Field(default=None, gt=0, allow_inf_nan=False)
+    usage_object: TripoUsage | None = None
+
+
+class TripoSpendRow(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    spend: float = Field(ge=0, allow_inf_nan=False)
+    metadata: TripoSpendMetadata | Json[TripoSpendMetadata] | None = None
+
+
+class TripoSpendLogs(RootModel[tuple[TripoSpendRow, ...]]):
+    model_config = ConfigDict(frozen=True)
