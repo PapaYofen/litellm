@@ -15,6 +15,10 @@ litellm --config litellm/proxy/example_config_yaml/tripo_pass_through_config.yam
 
 `TRIPO_API_BASE` optionally overrides `https://openapi.tripo3d.ai`. Set it to the upstream origin or a path prefix, without appending `/v3` when the client already sends `/tripo/v3/...`. The proxy preserves a configured base path
 
+When using the repository's Docker Compose setup, put these variables in the root `.env` file. Compose loads that file through `env_file`, and the PostgreSQL service supplies the required `DATABASE_URL`. `TRIPO_MODEL` is a client-side model identifier for the request and does not need to be configured on the proxy.
+
+Start the proxy and its dependencies with `docker compose up -d --build` to build this checkout's source. The published image referenced by Compose may not include this branch's Tripo integration. Without a local build, use an image version that includes it.
+
 No `model_list` entry is required. This integration reads `TRIPO_API_KEY` through LiteLLM's secret manager and does not resolve per-model Tripo credentials or accept caller-supplied upstream credentials
 
 ## Create and retrieve a task
