@@ -37,7 +37,6 @@ def test_tripo_task_is_owned_and_charged_at_captured_rate(proxy: ProxyClient, tr
     foreign_alias: Final = f"tripo-test-foreign-{marker}"
     foreign: Final = proxy.generate_key(KeyGenerateBody(key_alias=foreign_alias))
     tripo_resources.defer(lambda: client.delete_key(foreign))
-    print(f"Test key aliases {owner_alias} and {foreign_alias}")
     owner_baseline: Final = proxy.key_info(owner.key).spend
     foreign_baseline: Final = proxy.key_info(foreign).spend
     assert owner_baseline is not None and foreign_baseline is not None
@@ -45,11 +44,9 @@ def test_tripo_task_is_owned_and_charged_at_captured_rate(proxy: ProxyClient, tr
     task_id: Final = owner.generate(
         TripoGenerationBody(model=TRIPO_MODEL, prompt=os.environ.get("TRIPO_PROMPT", "a simple low-poly wooden chair"))
     )
-    print(f"Created task {task_id}")
     _ = unwrap(client.task(owner.key, task_id))
     for rejected in (client.task(foreign, task_id), client.list_task(foreign, task_id)):
         assert isinstance(rejected, UnknownApiError) and rejected.status_code == 404, "Foreign key can access the task"
-    print("Task ownership isolation passed")
     completed: Final = client.poll_task(owner.key, task_id)
     assert completed.credits_consumed is not None
     row: Final = client.poll_accounting(
@@ -57,7 +54,3 @@ def test_tripo_task_is_owned_and_charged_at_captured_rate(proxy: ProxyClient, tr
     )
     owner.mark_accounted()
     assert row.metadata is not None
-    print(
-        f"Exact task cost and key isolation verified, credits {completed.credits_consumed}, "
-        f"USD per credit {row.metadata.tripo_usd_per_credit}, USD {row.spend}"
-    )

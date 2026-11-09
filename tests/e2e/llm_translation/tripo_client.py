@@ -68,7 +68,6 @@ class TripoClient:
 
     def _completed_task(self, key: str, task_id: str) -> TripoTask | None:
         task: Final = unwrap(self.task(key, task_id)).data
-        print(f"Task {task_id} status {task.status}")
         if task.status == "success":
             assert task.credits_consumed is not None, f"Task {task_id} succeeded without credits_consumed"
             return task
