@@ -36148,6 +36148,136 @@
           ]
         }
       },
+      "/tripo/{endpoint}": {
+        "get": {
+          "description": "Forward Tripo requests in their native format. Generation returns a task ID for subsequent polling.",
+          "operationId": "tripo_proxy_route_tripo__endpoint__get",
+          "parameters": [
+            {
+              "in": "path",
+              "name": "endpoint",
+              "required": true,
+              "schema": {
+                "title": "Endpoint",
+                "type": "string"
+              }
+            }
+          ],
+          "requestBody": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              },
+              "multipart/form-data": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "required": false
+          },
+          "responses": {
+            "200": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "additionalProperties": true,
+                    "type": "object"
+                  }
+                }
+              },
+              "description": "The native Tripo response, including task IDs, status, or output URLs."
+            },
+            "422": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/HTTPValidationError"
+                  }
+                }
+              },
+              "description": "Validation Error"
+            }
+          },
+          "security": [
+            {
+              "APIKeyHeader": []
+            }
+          ],
+          "summary": "Tripo Proxy Route",
+          "tags": [
+            "llm_passthrough"
+          ]
+        },
+        "post": {
+          "description": "Forward Tripo requests in their native format. Generation returns a task ID for subsequent polling.",
+          "operationId": "tripo_proxy_route_tripo__endpoint__post",
+          "parameters": [
+            {
+              "in": "path",
+              "name": "endpoint",
+              "required": true,
+              "schema": {
+                "title": "Endpoint",
+                "type": "string"
+              }
+            }
+          ],
+          "requestBody": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              },
+              "multipart/form-data": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "required": false
+          },
+          "responses": {
+            "200": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "additionalProperties": true,
+                    "type": "object"
+                  }
+                }
+              },
+              "description": "The native Tripo response, including task IDs, status, or output URLs."
+            },
+            "422": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/HTTPValidationError"
+                  }
+                }
+              },
+              "description": "Validation Error"
+            }
+          },
+          "security": [
+            {
+              "APIKeyHeader": []
+            }
+          ],
+          "summary": "Tripo Proxy Route",
+          "tags": [
+            "llm_passthrough"
+          ]
+        }
+      },
       "/typesafe/{endpoint}": {
         "delete": {
           "description": "[Docs](https://docs.litellm.ai/docs/pass_through/typesafe)",

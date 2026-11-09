@@ -11991,6 +11991,20 @@ class ProxyStartupEvent:
                     )
         if _wants_cleanup_jobs(cleanup_settings):
             proxy_config.record_cleanup_schedule_attempt(cleanup_settings)
+        if get_secret_str("TRIPO_API_KEY"):
+            from litellm.proxy.pass_through_endpoints.tripo import poll_tripo_tasks
+            from litellm.repositories.tripo_repository import TripoRepository
+
+            scheduler.add_job(  # pyright: ignore[reportUnknownMemberType]  # APScheduler does not type add_job
+                poll_tripo_tasks,
+                "interval",
+                seconds=30,
+                args=[TripoRepository(prisma_client)],
+                id="tripo_task_cost",
+                replace_existing=True,
+                misfire_grace_time=APSCHEDULER_MISFIRE_GRACE_TIME,
+            )
+
         ### CHECK BATCH COST ###
         if llm_router is not None and PROXY_BATCH_POLLING_ENABLED:
             try:

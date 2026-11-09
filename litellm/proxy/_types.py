@@ -432,6 +432,7 @@ class LiteLLMRoutes(enum.Enum):
         "/nvidia_nim",
         "/deepgram",
         "/fal_ai",
+        "/tripo",
     ]
 
     #########################################################

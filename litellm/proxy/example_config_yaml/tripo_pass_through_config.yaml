@@ -1,0 +1,4 @@
+model_list: []
+general_settings:
+  database_url: os.environ/DATABASE_URL
+  master_key: os.environ/LITELLM_MASTER_KEY

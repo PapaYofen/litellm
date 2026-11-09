@@ -135,6 +135,7 @@ from litellm.proxy.common_utils.token_count_log import (
     logged_provider_token_count,
     rejected_token_count,
 )
+from litellm.proxy.deps.repositories import TripoObjectRepositoryDep
 from litellm.proxy.pass_through_endpoints.injected_stream_usage import (
     stream_usage_relay,
     without_injected_usage_frames,
@@ -156,6 +157,13 @@ from litellm.proxy.pass_through_endpoints.pass_through_endpoints import (
     refuse_websocket,
     truncated_close_reason,
     websocket_passthrough_request,
+)
+from litellm.proxy.pass_through_endpoints.tripo import (
+    authorize_tripo_request,
+    build_tripo_ownership_scope,
+    get_tripo_api_base,
+    get_tripo_usd_per_credit,
+    register_tripo_response,
 )
 from litellm.proxy.utils import ProxyLogging as ProxyLoggingType
 from litellm.proxy.utils import is_known_model, normalize_route_for_root_path
@@ -557,6 +565,60 @@ async def fal_ai_proxy_route(
         is_streaming_request=False,
     )
     return await endpoint_func(request, fastapi_response, user_api_key_dict)
+
+
+@router.api_route(
+    "/tripo/{endpoint:path}",
+    methods=["GET", "POST"],
+    tags=["Tripo Pass-through", "pass-through"],
+    description="Forward Tripo requests in their native format. Generation returns a task ID for subsequent polling.",
+    openapi_extra={
+        "requestBody": {
+            "required": False,
+            "content": {
+                "application/json": {"schema": {"type": "object", "additionalProperties": True}},
+                "multipart/form-data": {"schema": {"type": "object", "additionalProperties": True}},
+            },
+        },
+    },
+    responses={
+        200: {
+            "description": "The native Tripo response, including task IDs, status, or output URLs.",
+            "content": {"application/json": {"schema": {"type": "object", "additionalProperties": True}}},
+        },
+    },
+)
+async def tripo_proxy_route(
+    endpoint: str,
+    request: Request,
+    fastapi_response: Response,
+    user_api_key_dict: Annotated[UserAPIKeyAuth, Depends(user_api_key_auth)],
+    tripo_objects: TripoObjectRepositoryDep,
+) -> Response:
+    api_key: Final = normalize_nonempty_secret_str(get_secret_str("TRIPO_API_KEY"))
+    if api_key is None:
+        raise HTTPException(status_code=503, detail="TRIPO_API_KEY is not configured on the proxy")
+    if tripo_objects is None:
+        raise HTTPException(status_code=503, detail="Tripo task isolation and billing require a database")
+    base_url: Final = get_tripo_api_base()
+    scope: Final = build_tripo_ownership_scope(str(base_url), api_key)
+    rate: Final = get_tripo_usd_per_credit()
+    owner, body = await authorize_tripo_request(endpoint, request, user_api_key_dict, tripo_objects, scope)
+    target: Final = base_url.copy_with(
+        path=HttpPassThroughEndpointHelpers.join_base_and_endpoint_path(base_url, httpx.URL(endpoint).path),
+    )
+    endpoint_func: Final = create_pass_through_route(
+        endpoint=endpoint,
+        target=str(target),
+        custom_headers={"Authorization": f"Bearer {api_key}"},
+        custom_llm_provider="tripo",
+        is_streaming_request=False,
+    )
+    response: Final = await endpoint_func(request, fastapi_response, user_api_key_dict)
+    if not isinstance(response, Response):
+        raise HTTPException(status_code=502, detail="Tripo returned an invalid HTTP response")
+    await register_tripo_response(response, endpoint, body, owner, tripo_objects, scope, rate)
+    return response
 
 
 @router.api_route(

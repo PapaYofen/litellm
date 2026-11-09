@@ -546,3 +546,23 @@ def test_vertex_pass_through_forwards_a_request_without_betas_despite_a_malforme
 
     assert (response.status_code, response.json()) == (200, _VERTEX_CLAUDE_REPLY)
     assert "anthropic-beta" not in upstream.calls.last.request.headers
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("api_key", [None, "", "   "])
+async def test_tripo_missing_upstream_key_returns_configuration_error(
+    monkeypatch: pytest.MonkeyPatch, api_key: str | None
+) -> None:
+    from fastapi import HTTPException, Request, Response
+
+    from litellm.proxy._types import UserAPIKeyAuth
+    from litellm.proxy.pass_through_endpoints.llm_passthrough_endpoints import tripo_proxy_route
+
+    monkeypatch.delenv("TRIPO_API_KEY", raising=False)
+    if api_key is not None:
+        monkeypatch.setenv("TRIPO_API_KEY", api_key)
+    request: Final = Request({"type": "http", "method": "GET", "path": "/tripo/v3/tasks/task-1", "headers": []})
+    with pytest.raises(HTTPException) as rejected:
+        await tripo_proxy_route("v3/tasks/task-1", request, Response(), UserAPIKeyAuth(), None)
+    assert rejected.value.status_code == 503
+    assert rejected.value.detail == "TRIPO_API_KEY is not configured on the proxy"

@@ -226,6 +226,7 @@ LAZY_FEATURES: Final[tuple[LazyFeature, ...]] = (
         module_path="litellm.proxy.pass_through_endpoints.llm_passthrough_endpoints",
         path_prefixes=(
             "/anthropic/",
+            "/tripo/",
             "/assemblyai/",
             "/azure/",
             "/azure_ai/",
