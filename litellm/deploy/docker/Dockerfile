@@ -34,7 +34,8 @@ FROM --platform=$BUILDPLATFORM $UI_BUILD_IMAGE AS ui-builder
 
 ENV NEXT_TELEMETRY_DISABLED=1 \
     npm_config_fund=false \
-    npm_config_audit=false
+    npm_config_audit=false \
+    NODE_OPTIONS=--max-old-space-size=4096
 
 WORKDIR /ui
 

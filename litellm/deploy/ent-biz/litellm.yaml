@@ -1,0 +1,340 @@
+# ent-biz 里的 LiteLLM，对应 compose 的两个服务：litellm 和 postgres。
+#
+# 先由同目录的 deploy.sh 构建镜像并创建 Secret litellm-env。脚本会把下面的
+# litellm-tripo-COMMIT 换成 litellm-tripo-<commit 前 8 位> 再 apply，不要直接套用这份文件。
+#
+# 官方 main-stable 镜像没有这次的 Tripo 路由。image 必须是本仓库这个 commit 构建出来的。
+#
+# 集群里已经有 tripo-blind-test，它占着下面两个 host 的 path /：
+#   alb-nsomc38go29ucqn14c.cn-beijing.alb.aliyuncsslb.com
+#   tripo-blind-test.vast-internal.com
+# 所以这里不能再写 path /。公网目前只有 ALB 自己的域名能打开，
+# vast-internal.com 会返回未备案页面。
+# SERVER_ROOT_PATH=/litellm 让进程把 /litellm 当成根。外面访问
+# /litellm/ui、/litellm/tripo、/litellm/cn.tripo，进路由前会去掉这个前缀。
+# Ingress 只挂 /litellm，根上的 /、/api、/ui、/v1 仍留给 blind-test。
+#
+# 这个命名空间的 LimitRange 会给没写 resources 的容器塞上 512Mi 上限。
+# LiteLLM 进程会超过这个数，所以下面的 request 和 limit 都写死。
+# 配额大约还剩 3.7 核 request 和 7.5Gi request，这一份是按 1 个副本算的。
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: litellm-config
+  namespace: ent-biz
+data:
+  # .com 是中国区，对外走 /cn.tripo。 .ai 是国际区，对外走 /tripo。
+  # 两条都必须是全局 deployment：不要加 team_id，并且 use_in_pass_through 保持 true。
+  # 只配了某个 team 的话，请求会直接 503。
+  config.yaml: |
+    model_list:
+      - model_name: tripo/task
+        litellm_params:
+          model: tripo/task
+          custom_llm_provider: tripo
+          api_key: os.environ/TRIPO_API_KEY
+          api_base: https://openapi.tripo3d.com/v3
+          use_in_pass_through: true
+      - model_name: tripo-global/task
+        litellm_params:
+          model: tripo/task
+          custom_llm_provider: tripo
+          api_key: os.environ/TRIPO_GLOBAL_API_KEY
+          api_base: https://openapi.tripo3d.ai/v3
+          use_in_pass_through: true
+
+    general_settings:
+      master_key: os.environ/LITELLM_MASTER_KEY
+
+    litellm_settings:
+      local_model_cost_map: true
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: litellm-db-data
+  namespace: ent-biz
+spec:
+  accessModes:
+    - ReadWriteOnce
+  # 同命名空间里 tripo-blind-test 已经用过这个存储类。
+  storageClassName: alicloud-disk-topology-alltype
+  resources:
+    requests:
+      storage: 10Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: litellm-db
+  namespace: ent-biz
+  labels:
+    app: litellm-db
+spec:
+  replicas: 1
+  # 云盘是 RWO，滚动更新时新旧 Pod 会抢同一块盘。重建可以避免这个窗口。
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: litellm-db
+  template:
+    metadata:
+      labels:
+        app: litellm-db
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 999
+        runAsGroup: 999
+        fsGroup: 999
+      containers:
+        - name: postgres
+          # Docker Hub 的 postgres:16 这个集群拉不到。tripobuddy 的 Postgres 已经在跑这张镜像。
+          image: docker.m.daocloud.io/library/postgres:16-alpine
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: postgres
+              containerPort: 5432
+          env:
+            - name: POSTGRES_DB
+              value: litellm
+            - name: POSTGRES_USER
+              value: llmproxy
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: litellm-env
+                  key: POSTGRES_PASSWORD
+            # 云盘根目录里可能有 lost+found。数据放到子目录，初始化才不会把盘当成非空目录拒绝。
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "llmproxy", "-d", "litellm"]
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 3
+          livenessProbe:
+            exec:
+              command: ["pg_isready", "-U", "llmproxy", "-d", "litellm"]
+            initialDelaySeconds: 20
+            periodSeconds: 10
+            timeoutSeconds: 3
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: litellm-db-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: litellm-db
+  namespace: ent-biz
+  labels:
+    app: litellm-db
+spec:
+  selector:
+    app: litellm-db
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: postgres
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: litellm
+  namespace: ent-biz
+  labels:
+    app: litellm
+spec:
+  replicas: 1
+  # maxSurge 0：更新时不要临时再起一个副本，避免把内存 request 顶过配额。
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
+  selector:
+    matchLabels:
+      app: litellm
+  template:
+    metadata:
+      labels:
+        app: litellm
+    spec:
+      automountServiceAccountToken: false
+      imagePullSecrets:
+        - name: regcred
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+      initContainers:
+        - name: wait-for-db
+          image: docker.m.daocloud.io/library/postgres:16-alpine
+          imagePullPolicy: IfNotPresent
+          command: ["sh", "-c", "until pg_isready -h litellm-db -U llmproxy -d litellm; do sleep 2; done"]
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+      containers:
+        - name: litellm
+          image: tripo-registry-registry.cn-beijing.cr.aliyuncs.com/tripo/ent-biz:litellm-tripo-COMMIT
+          # 每个 commit 一个标签，不会覆盖已有镜像。
+          imagePullPolicy: IfNotPresent
+          # 不要写 command。镜像 ENTRYPOINT 是 docker-entrypoint.sh，
+          # 以 - 开头的参数会走单体 proxy，等价于 compose 的 command。
+          args: ["--config", "/app/config.yaml"]
+          ports:
+            - name: http
+              containerPort: 4000
+          env:
+            - name: LITELLM_MASTER_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: litellm-env
+                  key: LITELLM_MASTER_KEY
+            - name: LITELLM_SALT_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: litellm-env
+                  key: LITELLM_SALT_KEY
+            - name: TRIPO_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: litellm-env
+                  key: TRIPO_API_KEY
+            - name: TRIPO_GLOBAL_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: litellm-env
+                  key: TRIPO_GLOBAL_API_KEY
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: litellm-env
+                  key: DATABASE_URL
+            - name: STORE_MODEL_IN_DB
+              value: "True"
+            - name: LITELLM_LOCAL_MODEL_COST_MAP
+              value: "True"
+            # 迁移脚本写在可写的 emptyDir 上。根文件系统是只读的。
+            - name: LITELLM_MIGRATION_DIR
+              value: /tmp/litellm-migrations
+            # 对外路径都挂在 /litellm 下。镜像里的界面目录是只读的，
+            # 启动时要改静态资源里的前缀，所以复制到 /tmp 这块 emptyDir。
+            - name: SERVER_ROOT_PATH
+              value: /litellm
+            - name: LITELLM_UI_PATH
+              value: /tmp/litellm-ui
+          # 探针打的是 Pod，不经过 Ingress。没带 /litellm 前缀的 /health 仍然能匹配。
+          # 第一次启动要跑 Prisma 迁移，冷启动会超过普通 liveness 的耐心。
+          startupProbe:
+            httpGet:
+              path: /health/liveliness
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 36
+          readinessProbe:
+            httpGet:
+              path: /health/readiness
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /health/liveliness
+              port: http
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 500m
+              memory: 2Gi
+            limits:
+              cpu: "2"
+              memory: 4Gi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: config
+              mountPath: /app/config.yaml
+              subPath: config.yaml
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+            - name: cache
+              mountPath: /app/.cache
+      volumes:
+        - name: config
+          configMap:
+            name: litellm-config
+        - name: tmp
+          emptyDir: {}
+        - name: cache
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: litellm
+  namespace: ent-biz
+  labels:
+    app: litellm
+spec:
+  selector:
+    app: litellm
+  ports:
+    - name: http
+      port: 4000
+      targetPort: http
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: litellm
+  namespace: ent-biz
+  annotations:
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}]'
+    alb.ingress.kubernetes.io/healthcheck-enabled: "true"
+    alb.ingress.kubernetes.io/healthcheck-httpcode: http_2xx
+    alb.ingress.kubernetes.io/healthcheck-path: /health/liveliness
+spec:
+  ingressClassName: alb-shared
+  rules:
+    - host: alb-nsomc38go29ucqn14c.cn-beijing.alb.aliyuncsslb.com
+      http:
+        paths:
+          # 一条前缀盖住界面、Tripo 和管理接口。
+          # /litellm/ui、/litellm/tripo/v3/...、/litellm/cn.tripo/v3/...
+          - path: /litellm
+            pathType: Prefix
+            backend:
+              service:
+                name: litellm
+                port:
+                  number: 4000
