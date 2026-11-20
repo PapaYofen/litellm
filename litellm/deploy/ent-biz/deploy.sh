@@ -135,7 +135,7 @@ sed "s|litellm-tripo-COMMIT|litellm-tripo-${COMMIT}|g" "$SCRIPT_DIR/litellm.yaml
 kubectl apply -f "$rendered"
 rm -f "$rendered"
 # 标签变了，Deployment 的 image 字段会变，滚动更新自己会发生。
-kubectl -n "$NAMESPACE" rollout status deploy/litellm-db --timeout=180s
+kubectl -n "$NAMESPACE" rollout status deploy/litellm-db --timeout=600s
 kubectl -n "$NAMESPACE" rollout status deploy/litellm --timeout=600s
 
 cat <<'EOF'

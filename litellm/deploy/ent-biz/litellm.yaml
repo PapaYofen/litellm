@@ -59,10 +59,11 @@ spec:
   accessModes:
     - ReadWriteOnce
   # 同命名空间里 tripo-blind-test 已经用过这个存储类。
+  # 这个节点不支持 ESSD，SSD 和高效云盘最小都是 20Gi。
   storageClassName: alicloud-disk-topology-alltype
   resources:
     requests:
-      storage: 10Gi
+      storage: 20Gi
 ---
 apiVersion: apps/v1
 kind: Deployment
