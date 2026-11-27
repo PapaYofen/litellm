@@ -1,0 +1,4 @@
+services:
+  litellm:
+    volumes: !override
+      - ./tripo.config.cn.yaml:/app/config.yaml:ro

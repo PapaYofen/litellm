@@ -1,0 +1,14 @@
+model_list:
+  - model_name: tripo/task
+    litellm_params:
+      model: tripo/task
+      custom_llm_provider: tripo
+      api_key: os.environ/TRIPO_API_KEY
+      api_base: https://openapi.tripo3d.com/v3
+      use_in_pass_through: true
+
+general_settings:
+  master_key: os.environ/LITELLM_MASTER_KEY
+
+litellm_settings:
+  local_model_cost_map: true

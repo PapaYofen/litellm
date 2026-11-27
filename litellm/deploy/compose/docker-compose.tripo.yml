@@ -1,5 +1,7 @@
 services:
   litellm:
+    image: crpi-b5v0pddil1wb185w.cn-beijing.personal.cr.aliyuncs.com/tripo2026/litellm:f4169ee8
+    build: !reset null
     command: ["--config", "/app/config.yaml"]
     volumes:
       - ./tripo.config.yaml:/app/config.yaml:ro

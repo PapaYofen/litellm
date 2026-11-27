@@ -1,16 +1,20 @@
 # 用 LiteLLM 调用 Tripo(基于 LiteLLM 1.110.0适配TRIPO)
 
+TLDR: 可以直接执行 `litellm/deploy/compose/start-tripo-cn.sh` 来启动 LiteLLM。
+
 Tripo 开发者文档里的接口不用改。把文档里的 base url 换成下面的 LiteLLM 地址，`Authorization` 换成 LiteLLM 的 key。请求体、路径和查询参数仍按 Tripo 文档写。文档在 https://developers.tripo3d.com/zh/docs/introduction 。
 
 中国站文档里的 `https://openapi.tripo3d.com/v3` 换成 `http://127.0.0.1:4000/cn.tripo/v3`。国际站文档里的 `https://openapi.tripo3d.ai/v3` 换成 `http://127.0.0.1:4000/tripo/v3`。前面另有反向代理加了路径前缀时，把同样的前缀加到这两个地址上。默认不设置 `SERVER_ROOT_PATH`。
 
 调用时带 LiteLLM 的 key，格式是 `Authorization: Bearer <LiteLLM key>`。这把 key 是下面生成的 `LITELLM_MASTER_KEY`，或在 UI 里发出的 Virtual Key。不要把 Tripo 自己的 `tsk_` key 放进调用请求。LiteLLM 会换成配置里的 Tripo key 再转给上游。
 
-官方 `main-stable` 镜像里没有这次的路由。在这份代码上 `--build`。
+这次的路由在镜像 `crpi-b5v0pddil1wb185w.cn-beijing.personal.cr.aliyuncs.com/tripo2026/litellm:f4169ee8` 里。`docker-compose.tripo.yml` 指定这个镜像，启动时拉取，不用在本机构建。
 
 ## 1. 配置并启动
 
-在 `litellm/deploy/compose` 里写 `.env`，不要提交。两个区都要时：
+只接中国站时，在 `litellm/deploy/compose` 运行 `./start-tripo-cn.sh`。脚本询问中国区 Tripo key，保留已有的 `LITELLM_MASTER_KEY` 和 `LITELLM_SALT_KEY`，没有则各生成一次，然后启动。就绪后打印 `http://127.0.0.1:4000/cn.tripo/v3` 和 http://127.0.0.1:4000/ui 。
+
+要同时接两个区时，在 `litellm/deploy/compose` 里写 `.env`，不要提交。
 
 ```bash
 cd litellm/deploy/compose
@@ -67,6 +71,8 @@ litellm_settings:
 ```yaml
 services:
   litellm:
+    image: crpi-b5v0pddil1wb185w.cn-beijing.personal.cr.aliyuncs.com/tripo2026/litellm:f4169ee8
+    build: !reset null
     command: ["--config", "/app/config.yaml"]
     volumes:
       - ./tripo.config.yaml:/app/config.yaml:ro
@@ -74,17 +80,17 @@ services:
       LITELLM_LOCAL_MODEL_COST_MAP: "True"
 ```
 
-第一次构建会编 Admin UI、Python 依赖和 Rust，时间会比较长。下面的命令都在 `litellm/deploy/compose` 里执行。
+`build: !reset null` 会拿掉基础 compose 里的本地构建。下面的命令都在 `litellm/deploy/compose` 里执行。第一次启动会拉取上面的镜像。
 
 ```bash
-docker compose -f docker-compose.yml -f docker-compose.tripo.yml up -d --build
+docker compose -f docker-compose.yml -f docker-compose.tripo.yml up -d
 ```
 
 如果日志里是 `password authentication failed for user "llmproxy"`，先删掉旧的数据库卷再启动。`down -v` 会清掉这个栈里的数据库。
 
 ```bash
 docker compose -f docker-compose.yml -f docker-compose.tripo.yml down -v
-docker compose -f docker-compose.yml -f docker-compose.tripo.yml up -d --build
+docker compose -f docker-compose.yml -f docker-compose.tripo.yml up -d
 ```
 
 ## 2. 确认服务在线
