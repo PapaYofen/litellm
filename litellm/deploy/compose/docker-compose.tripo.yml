@@ -1,0 +1,7 @@
+services:
+  litellm:
+    command: ["--config", "/app/config.yaml"]
+    volumes:
+      - ./tripo.config.yaml:/app/config.yaml:ro
+    environment:
+      LITELLM_LOCAL_MODEL_COST_MAP: "True"
